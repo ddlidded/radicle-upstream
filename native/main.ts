@@ -14,43 +14,57 @@ import { RendererMessage, MainMessage, MainMessageKind } from "./ipc-types";
 
 const isDev = process.env.NODE_ENV === "development";
 
-if (isDev && !process.env.RADICLE_UPSTREAM_PROXY_PATH) {
-  throw new Error(
-    "RADICLE_UPSTREAM_PROXY_PATH must be set when running in dev mode!"
-  );
+let proxyPath;
+if (isDev) {
+  if (process.env.RADICLE_UPSTREAM_PROXY_PATH) {
+    proxyPath = path.join(__dirname, process.env.RADICLE_UPSTREAM_PROXY_PATH);
+  } else {
+    throw new Error(
+      "RADICLE_UPSTREAM_PROXY_PATH must be set when running in dev mode!"
+    );
+  }
+} else {
+  proxyPath = path.join(__dirname, "../../radicle-proxy");
 }
 
-const proxyPath = isDev
-  ? // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    path.join(__dirname, process.env.RADICLE_UPSTREAM_PROXY_PATH!)
-  : path.join(__dirname, "../../radicle-proxy");
+let proxyArgs: string[] = [];
+if (process.env.RADICLE_UPSTREAM_PROXY_ARGS) {
+  proxyArgs = process.env.RADICLE_UPSTREAM_PROXY_ARGS.split(/[, ]/).filter(
+    Boolean
+  );
+}
 
 // The default value of app.allowRendererProcessReuse is deprecated, it is
 // currently "false".  It will change to be "true" in Electron 9.  For more
 // information please check https://github.com/electron/electron/issues/18397
 app.allowRendererProcessReuse = true;
 
-const home = app.getPath("home");
-const identities_path = `${home}/.radicle/identities`;
-const current_identities_path = `${identities_path}/current`;
-const electron_path = `${current_identities_path}/electron`;
+let home;
+if (process.env.RAD_HOME) {
+  home = process.env.RAD_HOME;
+} else {
+  home = app.getPath("home");
+}
+const identitiesPath = `${home}/.radicle/identities`;
+const currentIdentitiesPath = `${identitiesPath}/current`;
+const electronPath = `${currentIdentitiesPath}/electron`;
 
 // Make sure "<home>/.radicle/identities" exists
-if (!fs.existsSync(identities_path))
-  fs.mkdirSync(identities_path, { recursive: true });
+if (!fs.existsSync(identitiesPath))
+  fs.mkdirSync(identitiesPath, { recursive: true });
 // If no "current" symlink exists, create it pointing to a new empty folder under identities
-if (!fs.existsSync(current_identities_path)) {
-  const new_identity_folder = uuid.v4();
-  fs.mkdirSync(`${identities_path}/${new_identity_folder}`);
+if (!fs.existsSync(currentIdentitiesPath)) {
+  const newIdentityFolder = uuid.v4();
+  fs.mkdirSync(`${identitiesPath}/${newIdentityFolder}`);
   fs.symlinkSync(
-    `${identities_path}/${new_identity_folder}`,
-    current_identities_path
+    `${identitiesPath}/${newIdentityFolder}`,
+    currentIdentitiesPath
   );
 }
 // Make sure the "electron" folder exists & overwrite the paths for the electron data
-if (!fs.existsSync(electron_path)) fs.mkdirSync(electron_path);
-app.setPath("userData", electron_path);
-app.setPath("appData", electron_path);
+if (!fs.existsSync(electronPath)) fs.mkdirSync(electronPath);
+app.setPath("userData", electronPath);
+app.setPath("appData", electronPath);
 
 class WindowManager {
   public window: BrowserWindow | null;
@@ -127,7 +141,7 @@ class WindowManager {
 const windowManager = new WindowManager();
 const proxyProcessManager = new ProxyProcessManager({
   proxyPath,
-  proxyArgs: [],
+  proxyArgs,
   lineLimit: 500,
 });
 
